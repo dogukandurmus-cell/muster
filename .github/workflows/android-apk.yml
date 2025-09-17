@@ -8,6 +8,8 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    env:
+      CI: true
 
     steps:
       - name: Checkout
@@ -21,11 +23,14 @@ jobs:
       - name: Install deps
         run: |
           npm ci || npm i
+          # Eksikse sorun çıkaran web build bağımlılıklarını zorunlu ekle
+          npm i -D @vitejs/plugin-react vite || true
+          npm i react react-dom || true
 
       - name: Build web
         run: npm run build
 
-      # -- Android SDK ve lisanslar
+      # Android SDK ve araçlar
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -40,7 +45,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # -- Capacitor ve Android projesi
+      # Capacitor + Android projesi
       - name: Install Capacitor + Android
         run: |
           npm i @capacitor/core @capacitor/android
@@ -49,7 +54,7 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      # -- Gerekirse izin patch'i
+      # (Varsa) Manifest izin patch'i uygula
       - name: Patch AndroidManifest permissions
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
@@ -61,14 +66,13 @@ jobs:
             done < android-manifest-patch.txt
           fi
 
-      # -- Gradle wrapper çalıştırılabilir olsun
       - name: Make gradlew executable
-        run: chmod +x android/gradlew
+        run: if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
 
       - name: Build Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug
+          ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
