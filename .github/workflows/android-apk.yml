@@ -64,17 +64,27 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      - name: Patch gradle.properties & SDK versions
+            - name: Patch gradle.properties & SDK versions
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          # gradle.properties: AndroidX/Jetifier/JVM argları (varsa tekrar eklemez)
           mkdir -p android
           PROP="android/gradle.properties"
           touch "$PROP"
-          grep -q "^android.useAndroidX=true" "$PROP" || echo "android.useAndroidX=true" >> "$PROP"
-          grep -q "^android.enableJetifier=true" "$PROP" || echo "android.enableJetifier=true" >> "$PROP"
-          grep -q "^org.gradle.jvmargs=" "$PROP" || echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> "$PROP"
+          grep -q '^android.useAndroidX=true$' "$PROP" || printf '%s\n' 'android.useAndroidX=true' >> "$PROP"
+          grep -q '^android.enableJetifier=true$' "$PROP" || printf '%s\n' 'android.enableJetifier=true' >> "$PROP"
+          grep -q '^org.gradle.jvmargs=' "$PROP" || printf '%s\n' 'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8' >> "$PROP"
+
+          # local.properties: SDK yolu
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > android/local.properties
+
+          # variables.gradle varsa SDK sürümlerini zorla (yoksa sessizce geç)
           VARS="android/variables.gradle"
           if [ -f "$VARS" ]; then
-            sed
+            sed -i -E 's/compileSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/compileSdkVersion = 34/' "$VARS" || true
+            sed -i -E 's/targetSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/targetSdkVersion = 34/' "$VARS" || true
+            sed -i -E 's/minSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/minSdkVersion = 24/' "$VARS" || true
+          fi
