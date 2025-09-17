@@ -8,14 +8,16 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       CI: true
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3g"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Proje kökünü bul (package.json hangi klasördeyse orayı kullan)
+      # Proje kökünü bul (package.json hangi klasördeyse)
       - name: Locate project root
         shell: bash
         run: |
@@ -24,7 +26,7 @@ jobs:
           if [ ! -f package.json ]; then
             FOUND=$(find . -maxdepth 3 -name package.json -not -path "*/node_modules/*" | head -n 1 || true)
             if [ -z "$FOUND" ]; then
-              echo "::error::package.json bulunamadı. Lütfen proje dosyalarını repo'ya yükleyin (src/, public/, package.json, vite.config.ts)."
+              echo "::error::package.json bulunamadı. src/, public/, package.json ve vite.config.ts repo'da olmalı."
               exit 1
             fi
             PKG_DIR=$(dirname "$FOUND")
@@ -37,10 +39,19 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/pnpm-lock.yaml', '**/yarn.lock') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
       - name: Install deps
         working-directory: ${{ env.PKG_DIR }}
         run: |
           npm ci || npm i
+          # Eksikse sık takılan bağımlılıkları ekle
           npm i -D @vitejs/plugin-react vite || true
           npm i react react-dom || true
 
@@ -48,11 +59,10 @@ jobs:
         working-directory: ${{ env.PKG_DIR }}
         run: npm run build
 
-      # Android SDK ve araçlar
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android packages
+      - name: Accept licenses & install packages
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
@@ -63,7 +73,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Capacitor + Android projesi
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       - name: Install Capacitor + Android
         working-directory: ${{ env.PKG_DIR }}
         run: |
@@ -73,8 +92,7 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      # (Varsa) Manifest izin patch'i uygula
-      - name: Patch AndroidManifest permissions
+      - name: Patch AndroidManifest permissions (optional)
         working-directory: ${{ env.PKG_DIR }}
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
@@ -92,7 +110,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ${{ env.PKG_DIR }}/android
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
