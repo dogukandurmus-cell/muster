@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      PROJECT_DIR: .   # proje alt klasördeyse burayı klasör adı yap (ör. ziyaret-apk-ready)
+      PROJECT_DIR: .   # Projeniz alt klasördeyse burayı klasör adı yapın (örn. ziyaret-apk-ready)
 
     steps:
       - name: Checkout
@@ -83,39 +83,24 @@ jobs:
             sed -i -E 's/minSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/minSdkVersion = 24/' "$VARS" || true
           fi
 
-            - name: Force Java 17 toolchain (fix invalid source release 21)
+      - name: Force Java 17 toolchain (fix invalid source release 21)
         working-directory: ${{ env.PROJECT_DIR }}/android
         shell: bash
         run: |
           set -euo pipefail
-
-          # Tüm ilgili dosyalar: build.gradle(.kts) + gradle.properties
           mapfile -d '' FILES < <(find . -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "gradle.properties" \) -print0)
-
           for f in "${FILES[@]}"; do
-            # JavaVersion.VERSION_21 / VERSION_20 -> VERSION_17
             sed -i -E 's/JavaVersion\.VERSION_2[01]/JavaVersion.VERSION_17/g' "$f" || true
-
-            # sourceCompatibility / targetCompatibility 21|20 -> 17
             sed -i -E 's/\bsourceCompatibility\b[[:space:]]*[:=][[:space:]]*(JavaVersion\.VERSION_2[01]|2[01])/sourceCompatibility = JavaVersion.VERSION_17/g' "$f" || true
             sed -i -E 's/\btargetCompatibility\b[[:space:]]*[:=][[:space:]]*(JavaVersion\.VERSION_2[01]|2[01])/targetCompatibility = JavaVersion.VERSION_17/g' "$f" || true
-
-            # Kotlin jvmTarget "21"|"20" -> "17"
             sed -i -E 's/\bjvmTarget\b[[:space:]]*[:=][[:space:]]*"?2[01]"?/jvmTarget = "17"/g' "$f" || true
-
-            # Java toolchain: JavaLanguageVersion.of(21|20) -> of(17)
             sed -i -E 's/JavaLanguageVersion\.of\([[:space:]]*2[01][[:space:]]*\)/JavaLanguageVersion.of(17)/g' "$f" || true
             sed -i -E 's/languageVersion[[:space:]]*=[[:space:]]*JavaLanguageVersion\.of\([[:space:]]*2[01][[:space:]]*\)/languageVersion = JavaLanguageVersion.of(17)/g' "$f" || true
-
-            # Derleyici bayrakları: --release 21|20 -> --release 17
             sed -i -E 's/--release[[:space:]]+2[01]/--release 17/g' "$f" || true
-
-            # Diğer olası özel sabitler
             sed -i -E 's/\bTARGET_JAVA_VERSION\b[[:space:]]*=[[:space:]]*2[01]/TARGET_JAVA_VERSION = 17/g' "$f" || true
             sed -i -E 's/\bjavaVersion\b[[:space:]]*=[[:space:]]*2[01]/javaVersion = 17/g' "$f" || true
           done
-
-          echo "=== Java sürümü ile ilgili kalan 21 izleri (beklenmemeli) ==="
+          echo "=== Kalan 21 izleri (beklenmemeli) ==="
           grep -RIn --include='*gradle*' --include='gradle.properties' -E 'VERSION_21|JavaLanguageVersion\.of\(21\)|--release 21|[=:] *21' . || true
 
       - name: Make gradlew executable
