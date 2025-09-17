@@ -35,4 +35,72 @@ jobs:
           npm i -D vite @vitejs/plugin-react typescript tailwindcss postcss autoprefixer || true
           npm i react react-dom dexie || true
 
-      - name: Build w
+      - name: Build web
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm run build
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses & install packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Capacitor + Android
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          npm i @capacitor/core @capacitor/android
+          npm i -D @capacitor/cli
+          npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir=dist --npm-client npm || true
+          npx cap add android || true
+          npx cap sync android
+
+      # --- En yaygın sorunlar için hızlı yamalar (SDK/AndroidX/Kotlin vs.) ---
+      - name: Patch gradle.properties & SDK versions
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+          PROP="android/gradle.properties"
+          mkdir -p android
+          touch "$PROP"
+          grep -q "^android.useAndroidX=true" "$PROP" || echo "android.useAndroidX=true" >> "$PROP"
+          grep -q "^android.enableJetifier=true" "$PROP" || echo "android.enableJetifier=true" >> "$PROP"
+          grep -q "^org.gradle.jvmargs=" "$PROP" || echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> "$PROP"
+
+          VARS="android/variables.gradle"
+          if [ -f "$VARS" ]; then
+            sed -i 's/compileSdkVersion *= *.*/compileSdkVersion = 34/' "$VARS" || true
+            sed -i 's/targetSdkVersion *= *.*/targetSdkVersion = 34/' "$VARS" || true
+            sed -i 's/minSdkVersion *= *.*/minSdkVersion = 24/' "$VARS" || true
+          fi
+
+          # Gradle wrapper varsa çalıştırılabilir yap
+          if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
+
+      - name: Build Debug APK (with full log)
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace --warning-mode all assembleDebug | tee gradle-build.log
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-logs
+          path: |
+            ${{ env.PROJECT_DIR }}/android/gradle-build.log
