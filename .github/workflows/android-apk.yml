@@ -9,17 +9,20 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      PROJECT_DIR: .   # Proje alt klasördeyse burayı değiştir (ör. PROJECT_DIR: ziyaret-apk-ready)
+      # 👇 Buraya proje klasörünü yaz.
+      #   Kökteyse: .
+      #   Alt klasördeyse: klasör-adı (ör. ziyaret-apk-ready)
+      PROJECT_DIR: .
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show workspace
+      - name: Show workspace (debug)
         run: |
           echo "Repo içeriği:"; ls -la
           echo "Seçilen proje klasörü: $PROJECT_DIR"
-          if [ -d "$PROJECT_DIR" ]; then ls -la "$PROJECT_DIR"; fi
+          if [ -d "$PROJECT_DIR" ]; then echo "Proje klasörü içeriği:"; ls -la "$PROJECT_DIR"; fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,46 +33,10 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           npm ci || npm i
-          npm i -D @vitejs/plugin-react vite || true
-          npm i react react-dom || true
+          npm i -D vite @vitejs/plugin-react || true
+          npm i react react-dom dexie || true
+          npm i -D typescript @types/react @types/react-dom tailwindcss postcss autoprefixer || true
 
       - name: Build web
         working-directory: ${{ env.PROJECT_DIR }}
-        run: npm run build
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept licenses & install packages
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Capacitor + Android
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          npm i @capacitor/core @capacitor/android
-          npm i -D @capacitor/cli
-          npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir=dist --npm-client npm || true
-          npx cap add android || true
-          npx cap sync android
-
-      - name: Make gradlew executable
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
-
-      - name: Build Debug APK
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug.apk
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+        ru
