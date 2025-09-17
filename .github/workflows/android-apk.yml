@@ -15,19 +15,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Proje kökünü bul (package.json hangi klasördeyse orayı kullan)
+      - name: Locate project root
+        shell: bash
+        run: |
+          echo "Workspace tree:"; ls -la
+          PKG_DIR="."
+          if [ ! -f package.json ]; then
+            FOUND=$(find . -maxdepth 3 -name package.json -not -path "*/node_modules/*" | head -n 1 || true)
+            if [ -z "$FOUND" ]; then
+              echo "::error::package.json bulunamadı. Lütfen proje dosyalarını repo'ya yükleyin (src/, public/, package.json, vite.config.ts)."
+              exit 1
+            fi
+            PKG_DIR=$(dirname "$FOUND")
+          fi
+          echo "PKG_DIR=$PKG_DIR" >> $GITHUB_ENV
+          echo "Using project dir: $PKG_DIR"; ls -la "$PKG_DIR"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install deps
+        working-directory: ${{ env.PKG_DIR }}
         run: |
           npm ci || npm i
-          # Eksikse sorun çıkaran web build bağımlılıklarını zorunlu ekle
           npm i -D @vitejs/plugin-react vite || true
           npm i react react-dom || true
 
       - name: Build web
+        working-directory: ${{ env.PKG_DIR }}
         run: npm run build
 
       # Android SDK ve araçlar
@@ -47,6 +65,7 @@ jobs:
 
       # Capacitor + Android projesi
       - name: Install Capacitor + Android
+        working-directory: ${{ env.PKG_DIR }}
         run: |
           npm i @capacitor/core @capacitor/android
           npm i -D @capacitor/cli
@@ -56,6 +75,7 @@ jobs:
 
       # (Varsa) Manifest izin patch'i uygula
       - name: Patch AndroidManifest permissions
+        working-directory: ${{ env.PKG_DIR }}
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
           if [ -f "$MANIFEST" ] && [ -f android-manifest-patch.txt ]; then
@@ -67,15 +87,15 @@ jobs:
           fi
 
       - name: Make gradlew executable
+        working-directory: ${{ env.PKG_DIR }}
         run: if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
 
       - name: Build Debug APK
-        run: |
-          cd android
-          ./gradlew --no-daemon assembleDebug
+        working-directory: ${{ env.PKG_DIR }}/android
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug.apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PKG_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
