@@ -2,8 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["**"]
 
 jobs:
   build-android:
@@ -11,20 +9,67 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3g"
+      PROJECT_DIR: .   # Proje alt klasördeyse burayı değiştir (ör. PROJECT_DIR: ziyaret-apk-ready)
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Proje kökünü bul (package.json hangi klasördeyse)
-      - name: Locate project root
-        shell: bash
+      - name: Show workspace
         run: |
-          echo "Workspace tree:"; ls -la
-          PKG_DIR="."
-          if [ ! -f package.json ]; then
-            FOUND=$(find . -maxdepth 3 -name package.json -not -path "*/node_modules/*" | head -n 1 || true)
-            if [ -z "$FOUND" ]; then
-              echo "::error::package.json bulunamadı. src/, public/, package.json ve vite.config.ts repo'da olmalı."
-              exit 1
+          echo "Repo içeriği:"; ls -la
+          echo "Seçilen proje klasörü: $PROJECT_DIR"
+          if [ -d "$PROJECT_DIR" ]; then ls -la "$PROJECT_DIR"; fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          npm ci || npm i
+          npm i -D @vitejs/plugin-react vite || true
+          npm i react react-dom || true
+
+      - name: Build web
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm run build
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses & install packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Capacitor + Android
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          npm i @capacitor/core @capacitor/android
+          npm i -D @capacitor/cli
+          npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir=dist --npm-client npm || true
+          npx cap add android || true
+          npx cap sync android
+
+      - name: Make gradlew executable
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
+
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
