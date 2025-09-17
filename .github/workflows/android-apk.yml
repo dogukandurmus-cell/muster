@@ -9,9 +9,7 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      # 👇 Buraya proje klasörünü yaz.
-      #   Kökteyse: .
-      #   Alt klasördeyse: klasör-adı (ör. ziyaret-apk-ready)
+      # Projene göre ayarla: proje kökteyse '.'; alt klasördeyse klasör adını yaz.
       PROJECT_DIR: .
 
     steps:
@@ -33,47 +31,8 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           npm ci || npm i
-          npm i -D vite @vitejs/plugin-react || true
+          # Sık takılan bağımlılıkları garantiye al
+          npm i -D vite @vitejs/plugin-react typescript tailwindcss postcss autoprefixer || true
           npm i react react-dom dexie || true
-          npm i -D typescript @types/react @types/react-dom tailwindcss postcss autoprefixer || true
 
-      - name: Build web
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: npm run build
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept licenses & install packages
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Capacitor + Android
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          npm i @capacitor/core @capacitor/android
-          npm i -D @capacitor/cli
-          npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir=dist --npm-client npm || true
-          npx cap add android || true
-          npx cap sync android
-
-      - name: Make gradlew executable
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
-
-      - name: Build Debug APK
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug.apk
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Build w
