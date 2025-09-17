@@ -1,13 +1,20 @@
-name: Build Android APK
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
 
-on:
-  workflow_dispatch:
+      - name: Show APK paths
+        run: |
+          echo "Looking for APKs under $PROJECT_DIR/android"
+          find "${{ env.PROJECT_DIR }}/android" -type f \( -name "*.apk" -o -name "*.aab" \) -print
 
-jobs:
-  build-android:
-    runs-on: ubuntu-latest
-    env:
-      PROJECT_DIR: .   # proje alt klasördeyse burayı klasör adı yap (ör. ziyaret-apk-ready)
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: |
+            ${{ env.PROJECT_DIR }}/android/app/build/outputs/**/*.apk
+            ${{ env.PROJECT_DIR }}/android/**/outputs/**/*.apk
+          if-no-files-found: error
 
     steps:
       - name: Checkout
