@@ -64,27 +64,74 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-            - name: Patch gradle.properties & SDK versions
+      - name: Patch gradle.properties & SDK versions
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -euo pipefail
-
-          # gradle.properties: AndroidX/Jetifier/JVM argları (varsa tekrar eklemez)
           mkdir -p android
           PROP="android/gradle.properties"
           touch "$PROP"
           grep -q '^android.useAndroidX=true$' "$PROP" || printf '%s\n' 'android.useAndroidX=true' >> "$PROP"
           grep -q '^android.enableJetifier=true$' "$PROP" || printf '%s\n' 'android.enableJetifier=true' >> "$PROP"
           grep -q '^org.gradle.jvmargs=' "$PROP" || printf '%s\n' 'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8' >> "$PROP"
-
-          # local.properties: SDK yolu
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > android/local.properties
-
-          # variables.gradle varsa SDK sürümlerini zorla (yoksa sessizce geç)
           VARS="android/variables.gradle"
           if [ -f "$VARS" ]; then
             sed -i -E 's/compileSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/compileSdkVersion = 34/' "$VARS" || true
             sed -i -E 's/targetSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/targetSdkVersion = 34/' "$VARS" || true
             sed -i -E 's/minSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/minSdkVersion = 24/' "$VARS" || true
           fi
+
+      - name: Force Java 17 toolchain (fix invalid source release 21)
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        shell: bash
+        run: |
+          set -e
+          find . -type f -name "build.gradle" -print0 | while IFS= read -r -d '' f; do
+            sed -i 's/JavaVersion\.VERSION_21/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/jvmTarget *[:=] *"21"/jvmTarget = "17"/g' "$f" || true
+            sed -i 's/sourceCompatibility *[:=] *21/sourceCompatibility = 17/g' "$f" || true
+            sed -i 's/targetCompatibility *[:=] *21/targetCompatibility = 17/g' "$f" || true
+          done
+          find . -type f -name "build.gradle.kts" -print0 | while IFS= read -r -d '' f; do
+            sed -i 's/JavaVersion\.VERSION_21/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/jvmTarget *[:=] *"21"/jvmTarget = "17"/g' "$f" || true
+            sed -i 's/sourceCompatibility *[:=] *JavaVersion\.VERSION_21/sourceCompatibility = JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/targetCompatibility *[:=] *JavaVersion\.VERSION_21/targetCompatibility = JavaVersion.VERSION_17/g' "$f" || true
+          done
+
+      - name: Make gradlew executable
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
+
+      - name: Build Debug APK (with full log)
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace --warning-mode all assembleDebug | tee gradle-build.log
+
+      - name: Show APK paths
+        shell: bash
+        run: |
+          echo "Looking for APKs under $PROJECT_DIR/android"
+          find "${{ env.PROJECT_DIR }}/android" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: |
+            ${{ env.PROJECT_DIR }}/android/app/build/outputs/**/*.apk
+            ${{ env.PROJECT_DIR }}/android/**/outputs/**/*.apk
+          if-no-files-found: error
+
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-logs
+          path: ${{ env.PROJECT_DIR }}/android/gradle-build.log
