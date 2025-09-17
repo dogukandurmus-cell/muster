@@ -9,13 +9,13 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      PROJECT_DIR: .   # Proje alt klasördeyse burayı klasör adı yap (ör. ziyaret-apk-ready)
+      PROJECT_DIR: .   # proje alt klasördeyse burayı klasör adı yap (ör. ziyaret-apk-ready)
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show workspace
+      - name: Show workspace (debug)
         run: |
           echo "Repo içeriği:"; ls -la
           echo "Proje klasörü: $PROJECT_DIR"
@@ -64,14 +64,34 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      - name: Patch gradle.properties & SDK versions
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -e
+          mkdir -p android
+          PROP="android/gradle.properties"
+          touch "$PROP"
+          grep -q "^android.useAndroidX=true" "$PROP" || echo "android.useAndroidX=true" >> "$PROP"
+          grep -q "^android.enableJetifier=true" "$PROP" || echo "android.enableJetifier=true" >> "$PROP"
+          grep -q "^org.gradle.jvmargs=" "$PROP" || echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> "$PROP"
+          VARS="android/variables.gradle"
+          if [ -f "$VARS" ]; then
+            sed -i 's/compileSdkVersion *= *.*/compileSdkVersion = 34/' "$VARS" || true
+            sed -i 's/targetSdkVersion *= *.*/targetSdkVersion = 34/' "$VARS" || true
+            sed -i 's/minSdkVersion *= *.*/minSdkVersion = 24/' "$VARS" || true
+          fi
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+
       - name: Make gradlew executable
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
 
-      - name: Build Debug APK
+      - name: Build Debug APK (with full log)
         working-directory: ${{ env.PROJECT_DIR }}/android
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace --warning-mode all assembleDebug | tee gradle-build.log
 
       - name: Show APK paths
         run: |
@@ -79,10 +99,18 @@ jobs:
           find "${{ env.PROJECT_DIR }}/android" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-build
           path: |
             ${{ env.PROJECT_DIR }}/android/app/build/outputs/**/*.apk
             ${{ env.PROJECT_DIR }}/android/**/outputs/**/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-logs
+          path: ${{ env.PROJECT_DIR }}/android/gradle-build.log
