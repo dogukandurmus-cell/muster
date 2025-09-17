@@ -50,7 +50,13 @@ jobs:
 
       - name: Install Capacitor & Android project
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
+          set -euo pipefail
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
-          npx cap init "MusteriZiyare
+          APP_NAME="MusteriZiyaret"
+          APP_ID="com.sirket.ziyaret"
+          npx cap init "$APP_NAME" "$APP_ID" --web-dir=dist --npm-client npm --yes || true
+          npx cap add android || true
+          npx cap sync android
