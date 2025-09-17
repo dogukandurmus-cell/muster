@@ -1,20 +1,15 @@
-      - name: Build Debug APK
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+name: Build Android APK
 
-      - name: Show APK paths
-        run: |
-          echo "Looking for APKs under $PROJECT_DIR/android"
-          find "${{ env.PROJECT_DIR }}/android" -type f \( -name "*.apk" -o -name "*.aab" \) -print
+on:
+  workflow_dispatch:
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-build
-          path: |
-            ${{ env.PROJECT_DIR }}/android/app/build/outputs/**/*.apk
-            ${{ env.PROJECT_DIR }}/android/**/outputs/**/*.apk
-          if-no-files-found: error
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+      PROJECT_DIR: .   # Proje alt klasördeyse burayı klasör adı yap (ör. ziyaret-apk-ready)
 
     steps:
       - name: Checkout
@@ -23,7 +18,8 @@
       - name: Show workspace
         run: |
           echo "Repo içeriği:"; ls -la
-          echo "Proje klasörü: $PROJECT_DIR"; if [ -d "$PROJECT_DIR" ]; then ls -la "$PROJECT_DIR"; fi
+          echo "Proje klasörü: $PROJECT_DIR"
+          if [ -d "$PROJECT_DIR" ]; then echo "Proje klasörü içeriği:"; ls -la "$PROJECT_DIR"; fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -67,3 +63,26 @@
           npx cap init "$APP_NAME" "$APP_ID" --web-dir=dist --npm-client npm --yes || true
           npx cap add android || true
           npx cap sync android
+
+      - name: Make gradlew executable
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
+
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Show APK paths
+        run: |
+          echo "Looking for APKs under $PROJECT_DIR/android"
+          find "${{ env.PROJECT_DIR }}/android" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: |
+            ${{ env.PROJECT_DIR }}/android/app/build/outputs/**/*.apk
+            ${{ env.PROJECT_DIR }}/android/**/outputs/**/*.apk
+          if-no-files-found: warn
