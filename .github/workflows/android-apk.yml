@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      PROJECT_DIR: .   # Projeniz alt klasördeyse burayı klasör adı yapın (örn. ziyaret-apk-ready)
+      PROJECT_DIR: .   # Projeniz alt klasördeyse burayı klasör adı yapın (örn: ziyaret-apk-ready)
 
     steps:
       - name: Checkout
@@ -37,11 +37,32 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: npm run build
 
-      - name: Setup Java (JDK 17)
+      # Gradle runtime için JDK 17
+      - name: Setup Java 17 (Gradle runtime)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
+
+      # Toolchain derleme için JDK 21 (capacitor-android source 21 istiyor)
+      - name: Setup Java 21 (toolchain for compile)
+        id: setup_java21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # Gradle'a iki JDK yolunu bildir (toolchain otomatik seçer)
+      - name: Register JDK paths for Gradle toolchains
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          PROP=~/.gradle/gradle.properties
+          echo "org.gradle.java.installations.auto-detect=true" >> "$PROP"
+          echo "org.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64" >> "$PROP"
+          echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> "$PROP"
+          echo "Gradle toolchains paths:"
+          cat "$PROP"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -64,6 +85,7 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      # (İsteğe bağlı) Android tarafı küçük yamalar
       - name: Patch gradle.properties & SDK versions
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
@@ -82,26 +104,6 @@ jobs:
             sed -i -E 's/targetSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/targetSdkVersion = 34/' "$VARS" || true
             sed -i -E 's/minSdkVersion[[:space:]]*=[[:space:]]*[0-9]+/minSdkVersion = 24/' "$VARS" || true
           fi
-
-      - name: Force Java 17 toolchain (fix invalid source release 21)
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -d '' FILES < <(find . -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "gradle.properties" \) -print0)
-          for f in "${FILES[@]}"; do
-            sed -i -E 's/JavaVersion\.VERSION_2[01]/JavaVersion.VERSION_17/g' "$f" || true
-            sed -i -E 's/\bsourceCompatibility\b[[:space:]]*[:=][[:space:]]*(JavaVersion\.VERSION_2[01]|2[01])/sourceCompatibility = JavaVersion.VERSION_17/g' "$f" || true
-            sed -i -E 's/\btargetCompatibility\b[[:space:]]*[:=][[:space:]]*(JavaVersion\.VERSION_2[01]|2[01])/targetCompatibility = JavaVersion.VERSION_17/g' "$f" || true
-            sed -i -E 's/\bjvmTarget\b[[:space:]]*[:=][[:space:]]*"?2[01]"?/jvmTarget = "17"/g' "$f" || true
-            sed -i -E 's/JavaLanguageVersion\.of\([[:space:]]*2[01][[:space:]]*\)/JavaLanguageVersion.of(17)/g' "$f" || true
-            sed -i -E 's/languageVersion[[:space:]]*=[[:space:]]*JavaLanguageVersion\.of\([[:space:]]*2[01][[:space:]]*\)/languageVersion = JavaLanguageVersion.of(17)/g' "$f" || true
-            sed -i -E 's/--release[[:space:]]+2[01]/--release 17/g' "$f" || true
-            sed -i -E 's/\bTARGET_JAVA_VERSION\b[[:space:]]*=[[:space:]]*2[01]/TARGET_JAVA_VERSION = 17/g' "$f" || true
-            sed -i -E 's/\bjavaVersion\b[[:space:]]*=[[:space:]]*2[01]/javaVersion = 17/g' "$f" || true
-          done
-          echo "=== Kalan 21 izleri (beklenmemeli) ==="
-          grep -RIn --include='*gradle*' --include='gradle.properties' -E 'VERSION_21|JavaLanguageVersion\.of\(21\)|--release 21|[=:] *21' . || true
 
       - name: Make gradlew executable
         working-directory: ${{ env.PROJECT_DIR }}
