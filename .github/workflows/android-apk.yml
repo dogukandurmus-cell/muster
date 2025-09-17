@@ -66,6 +66,7 @@ jobs:
 
       - name: Patch gradle.properties & SDK versions
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
           set -e
           mkdir -p android
@@ -76,68 +77,4 @@ jobs:
           grep -q "^org.gradle.jvmargs=" "$PROP" || echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> "$PROP"
           VARS="android/variables.gradle"
           if [ -f "$VARS" ]; then
-            sed -i 's/compileSdkVersion *= *.*/compileSdkVersion = 34/' "$VARS" || true
-            sed -i 's/targetSdkVersion *= *.*/targetSdkVersion = 34/' "$VARS" || true
-            sed -i 's/minSdkVersion *= *.*/minSdkVersion = 24/' "$VARS" || true
-          fi
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-      - name: Force Java 17 toolchain (fix "invalid source release: 21")
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        shell: bash
-        run: |
-          set -e
-          # Tüm build.gradle / build.gradle.kts dosyalarında 21 -> 17
-          find . -type f \( -name "build.gradle" -o -name "build.gradle.kts" \) | while read -r f; do
-            sed -i 's/JavaVersion\.VERSION_21/JavaVersion.VERSION_17/g' "$f" || true
-            sed -i 's/sourceCompatibility *[:=] *21/sourceCompatibility = 17/g' "$f" || true
-            sed -i 's/targetCompatibility *[:=] *21/targetCompatibility = 17/g' "$f" || true
-            sed -i 's/jvmTarget *[:=] *"21"/jvmTarget = "17"/g' "$f" || true
-          done
-
-          # app/build.gradle içinde compileOptions yoksa ekle
-          if [ -f app/build.gradle ] && ! grep -q 'compileOptions' app/build.gradle; then
-            awk '
-              { print }
-              /^android[[:space:]]*{/ && !added {
-                print "    compileOptions {"
-                print "        sourceCompatibility JavaVersion.VERSION_17"
-                print "        targetCompatibility JavaVersion.VERSION_17"
-                print "    }"
-                print "    kotlinOptions { jvmTarget = \\"17\\" }"
-                added=1
-              }
-            ' app/build.gradle > app/build.gradle.tmp && mv app/build.gradle.tmp app/build.gradle
-          fi
-
-      - name: Make gradlew executable
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
-
-      - name: Build Debug APK (with full log)
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: |
-          set -o pipefail
-          ./gradlew --no-daemon --stacktrace --warning-mode all assembleDebug | tee gradle-build.log
-
-      - name: Show APK paths
-        run: |
-          echo "Looking for APKs under $PROJECT_DIR/android"
-          find "${{ env.PROJECT_DIR }}/android" -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
-
-      - name: Upload APK artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-build
-          path: |
-            ${{ env.PROJECT_DIR }}/android/app/build/outputs/**/*.apk
-            ${{ env.PROJECT_DIR }}/android/**/outputs/**/*.apk
-          if-no-files-found: error
-
-      - name: Upload build logs (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-logs
-          path: ${{ env.PROJECT_DIR }}/android/gradle-build.log
+            sed
