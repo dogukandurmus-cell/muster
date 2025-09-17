@@ -109,7 +109,6 @@ jobs:
             ' app/build.gradle > app/build.gradle.tmp && mv app/build.gradle.tmp app/build.gradle
           fi
 
-
       - name: Make gradlew executable
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
