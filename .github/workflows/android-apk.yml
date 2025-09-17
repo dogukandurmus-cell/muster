@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 45
     env:
       CI: true
-      PROJECT_DIR: .   # proje alt klasördeyse burayı klasör adı yap
+      PROJECT_DIR: .   # proje alt klasördeyse klasör adını yaz (ör. ziyaret-apk-ready)
 
     steps:
       - name: Checkout
@@ -46,10 +46,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses & install packages
+      - name: Accept licenses & install SDKs (34 + 35)
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platform-tools" \
+            "platforms;android-34" "build-tools;34.0.0" \
+            "platforms;android-35" "build-tools;35.0.0"
 
       - name: Install Capacitor + Android
         working-directory: ${{ env.PROJECT_DIR }}
@@ -60,27 +62,4 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      - name: Make gradlew executable
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          if [ -f android/gradlew ]; then chmod +x android/gradlew; fi
-
-      - name: Build Debug APK
-        working-directory: ${{ env.PROJECT_DIR }}/android
-        run: |
-          set -o pipefail
-          ./gradlew --no-daemon --stacktrace assembleDebug | tee gradle-build.log
-
-      - name: Upload APK artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug.apk
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload build logs (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-logs
-          path: ${{ env.PROJECT_DIR }}/android/gradle-build.log
+      - name: Patch gradle.properties & SDK versi
