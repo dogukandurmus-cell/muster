@@ -45,12 +45,17 @@ jobs:
           java-version: '17'
 
       # Toolchain derleme için JDK 21 (capacitor-android source 21 istiyor)
-      - name: Setup Java 21 (toolchain for compile)
-        id: setup_java21
+            - name: Setup Java 21 (single JDK)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
+
+      - name: Force Gradle to use Java 21
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
+          echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
 
       # Gradle'a iki JDK yolunu bildir (toolchain otomatik seçer)
       - name: Register JDK paths for Gradle toolchains
