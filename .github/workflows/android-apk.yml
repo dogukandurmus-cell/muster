@@ -1,14 +1,12 @@
 name: Build Android APK
-
 on:
-  workflow_dispatch:        # Elle çalıştırmak için
-  push:                     # main'e push olursa da çalışır
+  workflow_dispatch:
+  push:
     branches: [ main ]
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,8 +21,8 @@ jobs:
           npm ci || npm i
           npm run build
 
-      # Android tarafı için güvenli JDK sürümü -> 17
-      - name: Setup Java 17
+      # --- Java & Android SDK ------------------------------------------------
+      - name: Setup Java 17 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,6 +36,7 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
+      # --- Capacitor Android projesini oluştur/senkronize et -----------------
       - name: Install Capacitor & Android platform
         run: |
           npm i -D @capacitor/cli
@@ -46,6 +45,36 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      # --- Java 17'yi Gradle ve module'a zorla uygula ------------------------
+      - name: Force Java 17 in Gradle and app module
+        run: |
+          # 1) Gradle her durumda bu JDK'yı kullansın
+          mkdir -p ~/.gradle
+          echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
+          echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
+
+          # 2) app/build.gradle içine compileOptions(17) + kotlin jvmTarget 17 ekle/çak
+          FILE=android/app/build.gradle
+          if [ -f "$FILE" ]; then
+            # Varsa 17 dışı değerleri 17 yap
+            sed -i 's/sourceCompatibility[[:space:]]*JavaVersion\.[A-Z_0-9]*/sourceCompatibility JavaVersion.VERSION_17/g' "$FILE" || true
+            sed -i 's/targetCompatibility[[:space:]]*JavaVersion\.[A-Z_0-9]*/targetCompatibility JavaVersion.VERSION_17/g' "$FILE" || true
+            sed -i "s/jvmTarget[[:space:]]*=[[:space:]]*['\"][0-9]\+['\"]/jvmTarget = '17'/g" "$FILE" || true
+
+            # Yoksa android { ... } bloğunun hemen içine enjekte et
+            if ! grep -q "sourceCompatibility" "$FILE"; then
+              awk '1;/^android[[:space:]]*{/ && !x{print "    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\\n    kotlinOptions { jvmTarget = \"17\" }"; x=1}' "$FILE" > /tmp/app.gradle && mv /tmp/app.gradle "$FILE"
+            fi
+          fi
+
+      # --- Tanı koymak için bir defalık çıktı (gerekirse bakarız) ------------
+      - name: Print Java/Gradle versions
+        run: |
+          java -version
+          cd android
+          ./gradlew -version
+
+      # --- Build --------------------------------------------------------------
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
