@@ -46,26 +46,45 @@ jobs:
           npx cap sync android
 
       # --- Java 17'yi Gradle ve module'a zorla uygula ------------------------
-      - name: Force Java 17 in Gradle and app module
+            - name: Force Java 17 in Gradle and app module (fixed)
         run: |
           # 1) Gradle her durumda bu JDK'yı kullansın
           mkdir -p ~/.gradle
-          echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
-          echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
+          {
+            echo "org.gradle.java.home=$JAVA_HOME"
+            echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
+          } >> ~/.gradle/gradle.properties
 
-          # 2) app/build.gradle içine compileOptions(17) + kotlin jvmTarget 17 ekle/çak
+          # 2) app/build.gradle içine 17 ayarlarını uygula
           FILE=android/app/build.gradle
           if [ -f "$FILE" ]; then
             # Varsa 17 dışı değerleri 17 yap
             sed -i 's/sourceCompatibility[[:space:]]*JavaVersion\.[A-Z_0-9]*/sourceCompatibility JavaVersion.VERSION_17/g' "$FILE" || true
             sed -i 's/targetCompatibility[[:space:]]*JavaVersion\.[A-Z_0-9]*/targetCompatibility JavaVersion.VERSION_17/g' "$FILE" || true
-            sed -i "s/jvmTarget[[:space:]]*=[[:space:]]*['\"][0-9]\+['\"]/jvmTarget = '17'/g" "$FILE" || true
+            sed -i 's/jvmTarget[[:space:]]*=[[:space:]]*["'\''][0-9]\+["'\'']/jvmTarget = "17"/g' "$FILE" || true
 
-            # Yoksa android { ... } bloğunun hemen içine enjekte et
-            if ! grep -q "sourceCompatibility" "$FILE"; then
-              awk '1;/^android[[:space:]]*{/ && !x{print "    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\\n    kotlinOptions { jvmTarget = \"17\" }"; x=1}' "$FILE" > /tmp/app.gradle && mv /tmp/app.gradle "$FILE"
+            # Eğer compileOptions yoksa android { ... } içine GERÇEK satırlarla ekle
+            if ! grep -q 'sourceCompatibility JavaVersion.VERSION_17' "$FILE"; then
+              BLOCK=$(cat <<'EOF'
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+EOF
+)
+              awk -v block="$BLOCK" '
+                BEGIN{added=0}
+                {
+                  print
+                  if (!added && $0 ~ /^[[:space:]]*android[[:space:]]*{/){
+                    print block
+                    added=1
+                  }
+                }' "$FILE" > /tmp/app.gradle && mv /tmp/app.gradle "$FILE"
             fi
           fi
+
 
       # --- Tanı koymak için bir defalık çıktı (gerekirse bakarız) ------------
       - name: Print Java/Gradle versions
