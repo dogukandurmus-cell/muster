@@ -85,7 +85,6 @@ EOF
             fi
           fi
 
-
       # --- Tanı koymak için bir defalık çıktı (gerekirse bakarız) ------------
       - name: Print Java/Gradle versions
         run: |
