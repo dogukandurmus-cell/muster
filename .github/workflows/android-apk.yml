@@ -1,5 +1,4 @@
 name: Build Android APK
-
 on:
   workflow_dispatch:
 
@@ -11,7 +10,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ⚠️ Cache YOK – lock dosyası zorunluluğu kalktı
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
@@ -22,10 +20,9 @@ jobs:
         run: |
           npm ci || npm i
 
-      - name: Build web
+      - name: Build web (varsa)
         run: |
-          # build script'in varsa kullan, yoksa sessizce geç
-          (npm run build) || (npm run build:web) || (npx vite build) || echo "No build script, skipping"
+          (npm run build) || (npm run build:web) || (npx vite build) || echo "No build script"
         env:
           CI: true
 
@@ -38,25 +35,36 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android packages
+      - name: Install Android packages (API 35)
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" || true
 
-      # --- Capacitor Android hazırlığı (repo zaten Capacitor değilse bile güvenli)
+      # --- Capacitor Android hazırlığı
       - name: Prepare Capacitor Android
         run: |
           npm i -D @capacitor/cli
           npm i @capacitor/core @capacitor/android
-          # web çıktı klasörünü otomatik bulmaya çalış
+          # web çıktısını bul
           WEB_DIR=""
           for d in dist build public; do
             if [ -d "$d" ]; then WEB_DIR="$d"; break; fi
           done
-          if [ -z "$WEB_DIR" ]; then WEB_DIR="dist"; fi
+          [ -z "$WEB_DIR" ] && WEB_DIR="dist"
           npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir="$WEB_DIR" --npm-client npm || true
           npx cap add android || true
           npx cap sync android
+
+      # --- compileSdk/targetSdk -> 35
+      - name: Bump compile/target SDK to 35
+        run: |
+          if [ -f android/variables.gradle ]; then
+            sed -i 's/compileSdkVersion = [0-9]\+/compileSdkVersion = 35/' android/variables.gradle
+            sed -i 's/targetSdkVersion = [0-9]\+/targetSdkVersion = 35/'   android/variables.gradle
+          fi
+          # AGP 8+ stilinde app/build.gradle içinde olabilir
+          sed -i 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]\+/compileSdk = 35/' android/app/build.gradle || true
+          sed -i 's/targetSdk[[:space:]]*=[[:space:]]*[0-9]\+/targetSdk = 35/' android/app/build.gradle || true
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
@@ -64,7 +72,7 @@ jobs:
       - name: Build Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
