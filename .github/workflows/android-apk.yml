@@ -1,12 +1,11 @@
 name: Build Android APK
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,30 +13,32 @@ jobs:
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
+          cache: 'npm'
 
-      - name: Install deps & build web
-        run: |
-          npm ci || npm i
-          npm run build
+      - name: Install deps
+        run: npm ci || npm i
 
-      # --- Java & Android SDK ------------------------------------------------
-      - name: Setup Java 17 (Temurin)
+      - name: Build web
+        run: npm run build
+
+      # JDK 21 kullanıyoruz; projede 21 istenirse "invalid source release" hatası olmaz.
+      - name: Setup Java (JDK 21)
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          distribution: 'temurin'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses & install packages
+      - name: Install Android packages
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # --- Capacitor Android projesini oluştur/senkronize et -----------------
-      - name: Install Capacitor & Android platform
+      # Capacitor android platformunu hazırlıyoruz; varsa adımlar idempotent (hata vermez).
+      - name: Prepare Capacitor Android
         run: |
           npm i -D @capacitor/cli
           npm i @capacitor/core @capacitor/android
@@ -45,64 +46,18 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      # --- Java 17'yi Gradle ve module'a zorla uygula ------------------------
-            - name: Force Java 17 in Gradle and app module (fixed)
-        run: |
-          # 1) Gradle her durumda bu JDK'yı kullansın
-          mkdir -p ~/.gradle
-          {
-            echo "org.gradle.java.home=$JAVA_HOME"
-            echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
-          } >> ~/.gradle/gradle.properties
-
-          # 2) app/build.gradle içine 17 ayarlarını uygula
-          FILE=android/app/build.gradle
-          if [ -f "$FILE" ]; then
-            # Varsa 17 dışı değerleri 17 yap
-            sed -i 's/sourceCompatibility[[:space:]]*JavaVersion\.[A-Z_0-9]*/sourceCompatibility JavaVersion.VERSION_17/g' "$FILE" || true
-            sed -i 's/targetCompatibility[[:space:]]*JavaVersion\.[A-Z_0-9]*/targetCompatibility JavaVersion.VERSION_17/g' "$FILE" || true
-            sed -i 's/jvmTarget[[:space:]]*=[[:space:]]*["'\''][0-9]\+["'\'']/jvmTarget = "17"/g' "$FILE" || true
-
-            # Eğer compileOptions yoksa android { ... } içine GERÇEK satırlarla ekle
-            if ! grep -q 'sourceCompatibility JavaVersion.VERSION_17' "$FILE"; then
-              BLOCK=$(cat <<'EOF'
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-    kotlinOptions { jvmTarget = "17" }
-EOF
-)
-              awk -v block="$BLOCK" '
-                BEGIN{added=0}
-                {
-                  print
-                  if (!added && $0 ~ /^[[:space:]]*android[[:space:]]*{/){
-                    print block
-                    added=1
-                  }
-                }' "$FILE" > /tmp/app.gradle && mv /tmp/app.gradle "$FILE"
-            fi
-          fi
-
-      # --- Tanı koymak için bir defalık çıktı (gerekirse bakarız) ------------
-      - name: Print Java/Gradle versions
-        run: |
-          java -version
-          cd android
-          ./gradlew -version
-
-      # --- Build --------------------------------------------------------------
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
       - name: Build Debug APK
-        run: |
-          cd android
-          ./gradlew --no-daemon assembleDebug
+        working-directory: android
+        run: ./gradlew assembleDebug
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-build
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+        with:
+          name: app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
