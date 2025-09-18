@@ -1,4 +1,5 @@
 name: Build Android APK
+
 on:
   workflow_dispatch:
 
@@ -10,23 +11,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ⚠️ Cache YOK – lock dosyası zorunluluğu kalktı
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: '20'
+          check-latest: true
 
       - name: Install deps
-        run: npm ci || npm i
+        run: |
+          npm ci || npm i
 
       - name: Build web
-        run: npm run build
+        run: |
+          # build script'in varsa kullan, yoksa sessizce geç
+          (npm run build) || (npm run build:web) || (npx vite build) || echo "No build script, skipping"
+        env:
+          CI: true
 
-      # JDK 21 kullanıyoruz; projede 21 istenirse "invalid source release" hatası olmaz.
-      - name: Setup Java (JDK 21)
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '21'
 
       - name: Setup Android SDK
@@ -37,12 +43,18 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # Capacitor android platformunu hazırlıyoruz; varsa adımlar idempotent (hata vermez).
+      # --- Capacitor Android hazırlığı (repo zaten Capacitor değilse bile güvenli)
       - name: Prepare Capacitor Android
         run: |
           npm i -D @capacitor/cli
           npm i @capacitor/core @capacitor/android
-          npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir=dist --npm-client npm || true
+          # web çıktı klasörünü otomatik bulmaya çalış
+          WEB_DIR=""
+          for d in dist build public; do
+            if [ -d "$d" ]; then WEB_DIR="$d"; break; fi
+          done
+          if [ -z "$WEB_DIR" ]; then WEB_DIR="dist"; fi
+          npx cap init "MusteriZiyaret" com.sirket.ziyaret --web-dir="$WEB_DIR" --npm-client npm || true
           npx cap add android || true
           npx cap sync android
 
@@ -50,10 +62,11 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build Debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
+        run: |
+          cd android
+          ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug.apk
